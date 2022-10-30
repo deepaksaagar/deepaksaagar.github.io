@@ -1,0 +1,125 @@
+---
+title: "Practical Machine Learning "
+author: "Deepak Kalaikadal"
+date: "2022-10-20"
+output: html_document
+---
+# Overview
+
+This is the final project for *Practical Machine Learning* course on Coursera. This project will use data collected from fitness devices attached to waist, arm, dumb-bells of 6 participants in order to predict their exercise pattern, defined by the 'classe' variable in the available data. I have decided to use 3 models for training - **Decision Trees, Random Forest, and Gradient Boosted Tree** on the training set. The best model is used to predict a validation set partitioned from the training-data using its accuracy and out-of-sample error rate. The best model is then used to predict 20 cases defined in the Testing set.
+
+## Importing Requisite Libraries
+```{r setup, warning=FALSE, message=FALSE}
+knitr::opts_chunk$set()
+#Importing requisite libraries
+
+library(lattice)
+library(ggplot2)
+library(caret)
+library(kernlab)
+library(rattle)
+library(corrplot)
+set.seed(1358)
+```
+
+## Reading, Cleaning, and Partitioning  the Training Dataset
+
+We will remove variables with little relevance to the predictions, variables with near-zero variance, and columsn with largely N/A entries. We will then partition the training set to give a validation set and a training set.
+
+```{r}
+pml_training <- read.csv("C:/Users/deepa/Downloads/pml-training.csv")
+pml_testing <- read.csv("C:/Users/deepa/Downloads/pml-testing.csv")
+train.raw <- pml_training
+test.raw <- pml_testing
+
+#removing columns with NA > 80%
+train.clean01 <- train.raw[,colMeans(is.na(train.raw)) < .8]
+#removing variables which are time-based, which are irrelevant
+train.clean02 <- train.clean01[,-c(1, grep("timestamp", names(train.clean01)) )]
+#removing near-zero variance variables
+train.clean03 <- train.clean02[,-nearZeroVar(train.clean02)]
+train.clean04 <- train.clean03[,-1]
+#Partitioning the Training-Set to give a Validation-Set
+partition <- createDataPartition(y=train.clean03$classe, p=0.7, list=F)
+train <- train.clean04[partition,]
+valid <- train.clean04[-partition,]
+```
+
+## Correlation Analysis
+
+Before we go onto training the models, a simple correlation analysis will help visualize the correlation among the variables
+
+```{r}
+corMatrix <- cor(train[, -54])
+corrplot(corMatrix, order = "FPC", method = "color", type = "lower", tl.cex = 0.6, tl.col = rgb(0, 0, 0))
+control <- trainControl(method="cv", number=3, verboseIter=F)
+```
+In the correlation graph above, the highly correlated variables are shown as dark pixels (both red and blue).
+
+## Training and Testing the Models
+
+Like mentioned in the overview, we will be using three methods to model the regressions in the training set, and use the best amongst them for the testing-set. A confusion matrix is an excellent wa to visualize the accuracy of each model and is provided at the end of each analysis.
+
+## Model 1 : Decision Tree
+```{r}
+#training model fit using the training-set
+mod_trees <- train(classe~., data=train, method="rpart", trControl = control, tuneLength = 5)
+fancyRpartPlot(mod_trees$finalModel)
+
+#prediction using the validation-set
+pred_trees <- predict(mod_trees, valid)
+cmtrees <- confusionMatrix(pred_trees, factor(valid$classe))
+cmtrees
+```
+The **Decision Tree Model** only provides an **accuracy of 57.4%** when implemented on the validation test, with 2,507 out of sample errors out of 5885 observations. This is a little on the lower end of expectations. Let us see if another model is able to perform better. The Accuracy of the Decision Tree Model can be visualized below.
+
+```{r}
+plot(cmtrees$table, col = cmtrees$byClass, 
+     main = paste("Decision Tree - Accuracy =",
+                  round(cmtrees$overall['Accuracy'], 4)))
+```
+
+## Model 2 : Random Forest
+```{r}
+#training model fit using the training-set
+mod_rf <- train(classe~., data=train, method="rf", trControl = control, tuneLength = 5)
+mod_rf <- train(classe~., data=train, method="rf", trControl = control)
+
+#prediction using the validation-set
+pred_rf <- predict(mod_rf, valid)
+cmrf <- confusionMatrix(pred_rf, factor(valid$classe))
+cmrf
+```
+The **Random Forest Model** provides an **accuracy of 99.79%** when implemented on the validation test, with only 10 out of sample errors out of 5885 observations. This is an impressive improvement in accuracy compared to the Decision Tree Model, and might probably be the best model to use for the final Testing Set. Let us see if the final model of choice is able to perform better at all. The Accuracy of the Decision Tree Model can be visualized below.
+
+```{r}
+plot(cmrf$table, col = cmrf$byClass, 
+     main = paste("Random Forest - Accuracy =",
+                  round(cmrf$overall['Accuracy'], 4)))
+```
+
+## Model 3 : Gradient Boosted Tree
+```{r}
+#training model fit using the training-set
+mod_gbm <- train(classe~., data=train, method="gbm", trControl = control, verbose = F)
+#prediction using the validation-set
+pred_gbm <- predict(mod_gbm, valid)
+cmgbm <- confusionMatrix(pred_gbm, factor(valid$classe))
+cmgbm
+```
+The **Gradient Boosted Tree Model** provides an impressive **accuracy of 98.90%** when implemented on the validation test, with only 65 out of sample errors out of 5885 observations. However, in spite of this high accuracy, it falls short of the Random Forest Model's performance. The accuracy of this model can be visualized in the plot below.
+
+```{r}
+plot(cmgbm$table, col = cmgbm$byClass, 
+     main = paste("Gradient Boosted Model - Accuracy =",
+                  round(cmgbm$overall['Accuracy'], 4)))
+```
+
+## Applying Best Model to Test Data
+
+From the above results based on the validation-set, it is very evident that the Random Forest Model has the highest accuracy and lowest out-of-sample errors. We will apply this model to the Testing Dataset.
+
+```{r}
+finalPredict <- predict(mod_rf, newdata=test.raw)
+finalPredict
+```
